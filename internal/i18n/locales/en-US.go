@@ -2,6 +2,16 @@ package locales
 
 // Messages English (US) translations
 var MessagesEnUS = map[string]string{
+	// Model list
+	"models.standard_group_required": "Only standard groups support fetching models",
+	"models.invalid_channel": "Unsupported channel type",
+	"models.invalid_upstream": "Enter a valid upstream URL",
+	"models.no_active_key": "No active keys in this group",
+	"models.decrypt_failed": "Failed to decrypt the API key",
+	"models.request_failed": "Failed to fetch models; check the upstream URL, proxy, network connection or request timeout",
+	"models.upstream_status": "Failed to fetch models: upstream returned HTTP {{.status}}",
+	"models.invalid_response": "The upstream returned an invalid model list",
+
 	// Common messages
 	"success":        "Operation successful",
 	"common.success": "Success",

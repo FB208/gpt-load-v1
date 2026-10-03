@@ -2,6 +2,16 @@ package locales
 
 // Messages Japanese translations
 var MessagesJaJP = map[string]string{
+	// Model list
+	"models.standard_group_required": "モデルの取得は標準グループのみ対応しています",
+	"models.invalid_channel": "未対応のチャネルタイプです",
+	"models.invalid_upstream": "有効な上流URLを入力してください",
+	"models.no_active_key": "グループに有効なキーがありません",
+	"models.decrypt_failed": "APIキーの復号に失敗しました",
+	"models.request_failed": "モデルの取得に失敗しました。上流URL、プロキシ、ネットワーク接続、タイムアウトを確認してください",
+	"models.upstream_status": "モデルの取得に失敗しました。上流の応答はHTTP {{.status}}です",
+	"models.invalid_response": "上流のモデル一覧の形式が無効です",
+
 	// Common messages
 	"success":        "操作成功",
 	"common.success": "成功",

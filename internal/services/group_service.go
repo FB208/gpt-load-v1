@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -59,6 +60,7 @@ type GroupService struct {
 	encryptionSvc         encryption.Service
 	aggregateGroupService *AggregateGroupService
 	channelRegistry       []string
+	channelFactory        *channel.Factory
 }
 
 // NewGroupService constructs a GroupService.
@@ -70,6 +72,7 @@ func NewGroupService(
 	keyImportSvc *KeyImportService,
 	encryptionSvc encryption.Service,
 	aggregateGroupService *AggregateGroupService,
+	channelFactory *channel.Factory,
 ) *GroupService {
 	return &GroupService{
 		db:                    db,
@@ -80,7 +83,72 @@ func NewGroupService(
 		encryptionSvc:         encryptionSvc,
 		aggregateGroupService: aggregateGroupService,
 		channelRegistry:       channel.GetChannels(),
+		channelFactory:        channelFactory,
 	}
+}
+
+// GroupModelsParams contains only the draft settings needed to query models.
+type GroupModelsParams struct {
+	Name        string              `json:"name"`
+	ChannelType string              `json:"channel_type"`
+	UpstreamURL string              `json:"upstream_url"`
+	Config      map[string]any      `json:"config"`
+	HeaderRules []models.HeaderRule `json:"header_rules"`
+}
+
+// FetchModels loads one active key and queries models without saving the draft.
+func (s *GroupService) FetchModels(ctx context.Context, groupID uint, params GroupModelsParams) ([]string, error) {
+	var group models.Group
+	if err := s.db.WithContext(ctx).First(&group, groupID).Error; err != nil {
+		return nil, app_errors.ParseDBError(err)
+	}
+	if group.GroupType == "aggregate" {
+		return nil, NewI18nError(app_errors.ErrValidation, "models.standard_group_required", nil)
+	}
+	if !s.isValidChannelType(params.ChannelType) {
+		return nil, NewI18nError(app_errors.ErrValidation, "models.invalid_channel", nil)
+	}
+	upstream, err := url.Parse(strings.TrimSpace(params.UpstreamURL))
+	if err != nil || upstream.Hostname() == "" || (upstream.Scheme != "http" && upstream.Scheme != "https") {
+		return nil, NewI18nError(app_errors.ErrValidation, "models.invalid_upstream", nil)
+	}
+	// Only HTTP settings affect this request; unrelated draft settings need no validation.
+	requestConfig := make(map[string]any)
+	for _, name := range []string{"proxy_url", "request_timeout", "connect_timeout", "idle_conn_timeout", "response_header_timeout", "max_idle_conns", "max_idle_conns_per_host"} {
+		if value, ok := params.Config[name]; ok {
+			requestConfig[name] = value
+		}
+	}
+	cleanedConfig, err := s.validateAndCleanConfig(requestConfig)
+	if err != nil {
+		return nil, err
+	}
+	var key models.APIKey
+	if err := s.db.WithContext(ctx).Where("group_id = ? AND status = ?", groupID, models.KeyStatusActive).Order("id ASC").First(&key).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, NewI18nError(app_errors.ErrNoActiveKeys, "models.no_active_key", nil)
+		}
+		return nil, app_errors.ParseDBError(err)
+	}
+	key.KeyValue, err = s.encryptionSvc.Decrypt(key.KeyValue)
+	if err != nil {
+		return nil, NewI18nError(app_errors.ErrInternalServer, "models.decrypt_failed", nil)
+	}
+	group.Name = params.Name
+	group.ChannelType = params.ChannelType
+	group.Upstreams, err = json.Marshal([]map[string]any{{"url": upstream.String(), "weight": 1}})
+	if err != nil {
+		return nil, app_errors.ErrInternalServer
+	}
+	group.EffectiveConfig = s.settingsManager.GetEffectiveConfig(datatypes.JSONMap(cleanedConfig))
+	group.HeaderRuleList = params.HeaderRules
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	ids, err := s.channelFactory.FetchModels(ctx, &group, &key)
+	if modelErr, ok := err.(*channel.ModelListError); ok {
+		return nil, NewI18nError(app_errors.ErrBadGateway, modelErr.MessageID, map[string]any{"status": modelErr.Status})
+	}
+	return ids, err
 }
 
 // GroupCreateParams captures all fields required to create a group.

@@ -29,6 +29,17 @@ export const keysApi = {
     return res.data;
   },
 
+  // 使用分组密钥和当前连接设置获取平台模型列表
+  async fetchModels(
+    groupId: number,
+    params: Pick<Group, "name" | "channel_type" | "config" | "header_rules"> & {
+      upstream_url: string;
+    }
+  ): Promise<string[]> {
+    const res = await http.post(`/groups/${groupId}/models`, params, { hideMessage: true });
+    return res.data;
+  },
+
   // 批量重排分组
   async reorderGroups(items: { id: number; sort: number }[]): Promise<void> {
     await http.put(

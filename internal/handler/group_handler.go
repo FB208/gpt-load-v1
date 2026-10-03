@@ -46,6 +46,25 @@ func (s *Server) handleGroupError(c *gin.Context, err error) bool {
 	return true
 }
 
+// FetchGroupModels returns model IDs using the group's active key and draft settings.
+func (s *Server) FetchGroupModels(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || id == 0 {
+		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_group_id")
+		return
+	}
+	var params services.GroupModelsParams
+	if err := c.ShouldBindJSON(&params); err != nil {
+		response.Error(c, app_errors.ErrInvalidJSON)
+		return
+	}
+	ids, err := s.GroupService.FetchModels(c.Request.Context(), uint(id), params)
+	if s.handleGroupError(c, err) {
+		return
+	}
+	response.Success(c, ids)
+}
+
 // GroupCreateRequest defines the payload for creating a group.
 type GroupCreateRequest struct {
 	Name                string              `json:"name"`

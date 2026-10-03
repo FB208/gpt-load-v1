@@ -2,6 +2,16 @@ package locales
 
 // Messages Chinese (Simplified) translations
 var MessagesZhCN = map[string]string{
+	// Model list
+	"models.standard_group_required": "仅标准分组支持获取模型",
+	"models.invalid_channel": "不支持的渠道类型",
+	"models.invalid_upstream": "请填写有效的上游地址",
+	"models.no_active_key": "分组没有可用密钥",
+	"models.decrypt_failed": "密钥解密失败",
+	"models.request_failed": "获取模型失败，请检查上游地址、代理和网络连接或请求是否超时",
+	"models.upstream_status": "获取模型失败，上游返回 HTTP {{.status}}",
+	"models.invalid_response": "上游返回的模型列表格式无效",
+
 	// Common messages
 	"success":        "操作成功",
 	"common.success": "操作成功",

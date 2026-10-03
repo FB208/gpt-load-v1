@@ -5,6 +5,7 @@ import ProxyKeysInput from "@/components/common/ProxyKeysInput.vue";
 import type { Group, GroupConfigOption, UpstreamInfo } from "@/types/models";
 import { Add, Close, HelpCircleOutline, Remove } from "@vicons/ionicons5";
 import {
+  NAutoComplete,
   NButton,
   NCard,
   NForm,
@@ -17,9 +18,10 @@ import {
   NSwitch,
   NTooltip,
   useMessage,
+  type AutoCompleteInst,
   type FormRules,
 } from "naive-ui";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 interface Props {
@@ -198,6 +200,67 @@ const rules: FormRules = {
     },
   ],
 };
+
+const fetchingModels = ref(false);
+const fetchedModels = ref<string[]>([]);
+const modelSearch = ref("");
+const modelInputRef = ref<AutoCompleteInst>();
+const modelOptions = computed(() =>
+  fetchedModels.value.filter(model => model.toLowerCase().includes(modelSearch.value.toLowerCase()))
+);
+let modelRequest = 0;
+
+// 关闭弹窗或切换分组时清空候选，使旧请求不能写回新表单。
+watch(
+  [() => props.show, () => props.group?.id],
+  () => {
+    modelRequest++;
+    fetchedModels.value = [];
+    modelSearch.value = "";
+    fetchingModels.value = false;
+  },
+  { flush: "sync" }
+);
+
+// 按点击时的连接设置获取模型，输入框内容保持不变。
+async function fetchModels() {
+  if (!props.group?.id || fetchingModels.value) return;
+  const upstream = formData.upstreams.find(item => item.weight > 0);
+  if (!upstream?.url.trim()) {
+    message.warning(t("keys.modelUpstreamRequired"));
+    return;
+  }
+  const request = ++modelRequest;
+  fetchingModels.value = true;
+  fetchedModels.value = [];
+  try {
+    const models = await keysApi.fetchModels(props.group.id, {
+      name: formData.name,
+      channel_type: formData.channel_type,
+      upstream_url: upstream.url.trim(),
+      config: buildConfig(),
+      header_rules: formData.header_rules
+        .filter(rule => rule.key.trim())
+        .map(rule => ({
+          ...rule,
+          key: rule.key.trim(),
+        })),
+    });
+    if (request !== modelRequest) return;
+    fetchedModels.value = models;
+    modelSearch.value = "";
+    if (models.length === 0) {
+      message.info(t("keys.noModelsFound"));
+    } else {
+      await nextTick();
+      if (request === modelRequest) modelInputRef.value?.focus();
+    }
+  } catch {
+    // 请求错误由现有 HTTP 拦截器显示。
+  } finally {
+    if (request === modelRequest) fetchingModels.value = false;
+  }
+}
 
 // 监听弹窗显示状态
 watch(
@@ -458,6 +521,23 @@ function handleClose() {
   emit("update:show", false);
 }
 
+// 将表单配置转为接口使用的类型，供获取模型和保存分组复用。
+function buildConfig() {
+  const config: Record<string, number | string | boolean> = {};
+  formData.configItems.forEach((item: ConfigItem) => {
+    if (item.key && item.key.trim()) {
+      const option = configOptions.value.find(opt => opt.key === item.key);
+      if (option && typeof option.default_value === "number" && typeof item.value === "string") {
+        const numValue = Number(item.value);
+        config[item.key] = isNaN(numValue) ? 0 : numValue;
+      } else {
+        config[item.key] = item.value;
+      }
+    }
+  });
+  return config;
+}
+
 // 提交表单
 async function handleSubmit() {
   if (loading.value) {
@@ -503,19 +583,7 @@ async function handleSubmit() {
       }
     }
 
-    // 将configItems转换为config对象
-    const config: Record<string, number | string | boolean> = {};
-    formData.configItems.forEach((item: ConfigItem) => {
-      if (item.key && item.key.trim()) {
-        const option = configOptions.value.find(opt => opt.key === item.key);
-        if (option && typeof option.default_value === "number" && typeof item.value === "string") {
-          const numValue = Number(item.value);
-          config[item.key] = isNaN(numValue) ? 0 : numValue;
-        } else {
-          config[item.key] = item.value;
-        }
-      }
-    });
+    const config = buildConfig();
 
     // 构建提交数据
     const submitData = {
@@ -682,10 +750,25 @@ async function handleSubmit() {
                   </n-tooltip>
                 </div>
               </template>
+              <div v-if="group" class="test-model-field">
+                <n-auto-complete
+                  ref="modelInputRef"
+                  v-model:value="formData.test_model"
+                  :placeholder="testModelPlaceholder"
+                  :options="modelOptions"
+                  :get-show="() => modelOptions.length > 0"
+                  :menu-props="{ class: 'test-model-menu' }"
+                  @update:value="modelSearch = $event"
+                />
+                <n-button :loading="fetchingModels" @click="fetchModels">
+                  {{ t("keys.fetchModels") }}
+                </n-button>
+              </div>
               <n-input
+                v-else
                 v-model:value="formData.test_model"
                 :placeholder="testModelPlaceholder"
-                @input="() => !props.group && (userModifiedFields.test_model = true)"
+                @input="userModifiedFields.test_model = true"
               />
             </n-form-item>
 
@@ -1183,7 +1266,35 @@ async function handleSubmit() {
   </n-modal>
 </template>
 
+<style>
+/* 候选菜单挂在弹窗外，长名称完整换行。 */
+.n-base-select-menu.test-model-menu {
+  width: 400px;
+  max-width: calc(100vw - 48px);
+}
+.n-base-select-menu.test-model-menu .n-base-select-option .n-base-select-option__content {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+}
+.n-base-select-menu.test-model-menu .n-base-select-option {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+</style>
+
 <style scoped>
+.test-model-field {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.test-model-field .n-auto-complete {
+  flex: 1;
+  min-width: 0;
+}
+
 .group-form-modal {
   width: 800px;
 }
