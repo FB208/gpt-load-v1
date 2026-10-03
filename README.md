@@ -71,27 +71,27 @@ docker run -d --name gpt-load \
 
 ### 方式二：使用 Docker Compose（推荐）
 
-**安装命令：**
+本分支使用 `deploy/docker-compose.yml` 部署自建镜像。将本次目录调整提交并推送到本分支后，先按 [部署说明](deploy/README.md) 配置镜像仓库并构建、推送镜像，再在服务器准备以下文件：
 
 ```bash
-# 创建目录
-mkdir -p gpt-load && cd gpt-load
+mkdir -p /home/DockerCompose/gpt-load /home/DockerVolumes/gpt-load/data
+cd /home/DockerCompose/gpt-load
 
-# 下载配置文件
-wget https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/v1/docker-compose.yml
-wget -O .env https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/v1/.env.example
+# 下载本分支的部署模板
+wget -O docker-compose.yml https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/docker-compose.yml
+wget -O .env https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/.env.example
+wget -O /home/DockerVolumes/gpt-load/.env https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/app.env.example
 
-# 编辑 .env 文件，修改AUTH_KEY为强密码，绝不使用 sk-123456 等默认或者简单密钥
+# 编辑当前目录 .env，设置 REGISTRY_REPO / VERSION 为已推送的镜像
+# 编辑 /home/DockerVolumes/gpt-load/.env，设置强随机 AUTH_KEY，保持 HOST=0.0.0.0、PORT=3001
+# 如为私有镜像仓库，先使用 docker login 登录
 
-# 启动服务
 docker compose up -d
 ```
 
-在部署之前，您必须修改默认的管理密钥 (AUTH_KEY)，建议密钥格式：sk-prod-[随机字符串32位]。
+以上下载仅用于首次配置；已有部署不要覆盖真实 `.env`。默认使用 SQLite，数据保存在 `/home/DockerVolumes/gpt-load/data`。模板仅运行 `gpt-load`；如需外部 MySQL、PostgreSQL 或 Redis，请自行准备服务，并在应用配置 `/home/DockerVolumes/gpt-load/.env` 中填写连接信息。`mark-v*` 自动部署配置见 [部署说明](deploy/README.md)。
 
-默认安装的是 SQLite 版本，适合轻量单机应用。
-
-如需安装 MySQL, PostgreSQL 及 Redis，请在 `docker-compose.yml` 文件中取消所需服务的注释，并配置好对应的环境配置重启即可。
+以下命令均在服务器 `/home/DockerCompose/gpt-load` 执行：
 
 **其他命令：**
 
@@ -105,7 +105,7 @@ docker compose logs -f
 # 重启服务
 docker compose down && docker compose up -d
 
-# 更新到最新 v1 版本
+# 更新当前 .env 中 REGISTRY_REPO / VERSION 指定的镜像
 docker compose pull && docker compose down && docker compose up -d
 ```
 
@@ -122,12 +122,12 @@ docker compose pull && docker compose down && docker compose up -d
 
 ```bash
 # 克隆并构建
-git clone https://github.com/tbphp/gpt-load.git
-cd gpt-load
+git clone https://github.com/FB208/gpt-load-v1.git
+cd gpt-load-v1
 go mod tidy
 
 # 创建配置
-cp .env.example .env
+cp deploy/app.env.example .env
 
 # 编辑 .env 文件，修改AUTH_KEY为强密码，绝不使用 sk-123456 等默认或者简单密钥
 # 修改 .env 中 DATABASE_DSN 和 REDIS_DSN 配置
@@ -296,6 +296,8 @@ GPT-Load 支持对 API 密钥进行加密存储。您可以随时启用、禁用
 #### Docker Compose 部署
 
 ```bash
+cd /home/DockerCompose/gpt-load
+
 # 1. 更新镜像（确保使用最新 v1 版本）
 docker compose pull
 
@@ -316,9 +318,9 @@ docker compose run --rm gpt-load migrate-keys --from "your-current-key"
 docker compose run --rm gpt-load migrate-keys --from "old-key" --to "new-32-char-secret-key"
 
 # 5. 更新配置文件
-# 编辑 .env 文件，设置 ENCRYPTION_KEY 与 --to 参数一致
+# 编辑应用配置 /home/DockerVolumes/gpt-load/.env，设置 ENCRYPTION_KEY 与 --to 参数一致
 # 如果禁用加密，则删除 ENCRYPTION_KEY 或设置为空
-vim .env
+vim /home/DockerVolumes/gpt-load/.env
 # 添加或修改: ENCRYPTION_KEY=your-32-char-secret-key
 
 # 6. 重启服务

@@ -69,27 +69,27 @@ docker run -d --name gpt-load \
 
 ### Method 2: Using Docker Compose (Recommended)
 
-**Installation Commands:**
+This fork uses `deploy/docker-compose.yml` for self-built images. After committing and pushing this layout to the fork, follow the [deployment guide](deploy/README.md) to configure the registry and build/push an image, then prepare these files on the server:
 
 ```bash
-# Create Directory
-mkdir -p gpt-load && cd gpt-load
+mkdir -p /home/DockerCompose/gpt-load /home/DockerVolumes/gpt-load/data
+cd /home/DockerCompose/gpt-load
 
-# Download configuration files
-wget https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/v1/docker-compose.yml
-wget -O .env https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/v1/.env.example
+# Download this fork's deployment templates
+wget -O docker-compose.yml https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/docker-compose.yml
+wget -O .env https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/.env.example
+wget -O /home/DockerVolumes/gpt-load/.env https://raw.githubusercontent.com/FB208/gpt-load-v1/refs/heads/main/deploy/app.env.example
 
-# Edit the .env file and change AUTH_KEY to a strong password. Never use default or simple keys like sk-123456.
+# Edit the current directory's .env: set REGISTRY_REPO / VERSION to an image you have pushed
+# Edit /home/DockerVolumes/gpt-load/.env: set a strong random AUTH_KEY; keep HOST=0.0.0.0 and PORT=3001
+# For a private registry, authenticate with docker login first
 
-# Start services
 docker compose up -d
 ```
 
-Before deployment, you must change the default admin key (AUTH_KEY). A recommended format is: sk-prod-[32-character random string].
+These downloads are for first-time setup only; do not overwrite existing real `.env` files. SQLite is used by default, with data in `/home/DockerVolumes/gpt-load/data`. The template runs only `gpt-load`; provision external MySQL, PostgreSQL, or Redis separately if needed and configure their connections in `/home/DockerVolumes/gpt-load/.env`. See the [deployment guide](deploy/README.md) for `mark-v*` automation.
 
-The default installation uses the SQLite version, which is suitable for lightweight, single-instance applications.
-
-If you need to install MySQL, PostgreSQL, and Redis, please uncomment the required services in the `docker-compose.yml` file, configure the corresponding environment variables, and restart.
+Run the following commands in `/home/DockerCompose/gpt-load` on the server:
 
 **Other Commands:**
 
@@ -103,7 +103,7 @@ docker compose logs -f
 # Restart Service
 docker compose down && docker compose up -d
 
-# Update to the latest v1 version
+# Update the image selected by REGISTRY_REPO / VERSION in the current .env
 docker compose pull && docker compose down && docker compose up -d
 ```
 
@@ -120,12 +120,12 @@ Source build requires a locally installed database (SQLite, MySQL, or PostgreSQL
 
 ```bash
 # Clone and build
-git clone https://github.com/tbphp/gpt-load.git
-cd gpt-load
+git clone https://github.com/FB208/gpt-load-v1.git
+cd gpt-load-v1
 go mod tidy
 
 # Create configuration
-cp .env.example .env
+cp deploy/app.env.example .env
 
 # Edit the .env file and change AUTH_KEY to a strong password. Never use default or simple keys like sk-123456.
 # Modify DATABASE_DSN and REDIS_DSN configurations in .env
@@ -294,6 +294,8 @@ GPT-Load supports encrypted storage of API keys. You can enable, disable, or cha
 #### Docker Compose Deployment
 
 ```bash
+cd /home/DockerCompose/gpt-load
+
 # 1. Update the image (ensure you are using the latest v1 version)
 docker compose pull
 
@@ -314,9 +316,9 @@ docker compose run --rm gpt-load migrate-keys --from "your-current-key"
 docker compose run --rm gpt-load migrate-keys --from "old-key" --to "new-32-char-secret-key"
 
 # 5. Update configuration file
-# Edit .env file, set ENCRYPTION_KEY to match the --to parameter
+# Edit /home/DockerVolumes/gpt-load/.env, set ENCRYPTION_KEY to match the --to parameter
 # If disabling encryption, remove ENCRYPTION_KEY or set it to empty
-vim .env
+vim /home/DockerVolumes/gpt-load/.env
 # Add or modify: ENCRYPTION_KEY=your-32-char-secret-key
 
 # 6. Restart the service

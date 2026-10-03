@@ -7,14 +7,14 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 # 仓库根目录由 git 决定，脚本放在仓库内任何层级都能用
-$RepoRoot = git rev-parse --show-toplevel
+$RepoRoot = git -C $PSScriptRoot rev-parse --show-toplevel
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($RepoRoot)) {
     throw "Not inside a git repository."
 }
 $RepoRoot = $RepoRoot.Trim()
 
 if ([string]::IsNullOrWhiteSpace($SecretsFile)) {
-    $SecretsFile = Join-Path $RepoRoot ".env.secrets"
+    $SecretsFile = Join-Path $PSScriptRoot ".env.secrets"
 }
 
 if (-not (Test-Path -Path $SecretsFile)) {
