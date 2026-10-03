@@ -58,6 +58,7 @@ type GroupService struct {
 	keyImportSvc          *KeyImportService
 	encryptionSvc         encryption.Service
 	aggregateGroupService *AggregateGroupService
+	channelFactory        *channel.Factory
 	channelRegistry       []string
 }
 
@@ -70,6 +71,7 @@ func NewGroupService(
 	keyImportSvc *KeyImportService,
 	encryptionSvc encryption.Service,
 	aggregateGroupService *AggregateGroupService,
+	channelFactory *channel.Factory,
 ) *GroupService {
 	return &GroupService{
 		db:                    db,
@@ -79,6 +81,7 @@ func NewGroupService(
 		keyImportSvc:          keyImportSvc,
 		encryptionSvc:         encryptionSvc,
 		aggregateGroupService: aggregateGroupService,
+		channelFactory:        channelFactory,
 		channelRegistry:       channel.GetChannels(),
 	}
 }

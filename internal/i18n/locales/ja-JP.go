@@ -2,6 +2,17 @@ package locales
 
 // Messages Japanese translations
 var MessagesJaJP = map[string]string{
+	// Model list queries
+	"models.invalid_proxy":           "プロキシ URL が無効です。プロキシ設定を確認してください",
+	"models.standard_group_required": "モデル取得は通常グループのみ対応しています",
+	"models.invalid_upstream":        "有効な HTTP または HTTPS の上流 URL を入力してください",
+	"models.no_active_key":           "このグループには有効な API キーがありません",
+	"models.decrypt_failed":          "API キーを復号できないため、モデルを取得できません",
+	"models.request_failed":          "モデルを取得できませんでした。上流 URL とプロキシ設定を確認してください",
+	"models.timeout":                 "モデル取得がタイムアウトしました。後でもう一度お試しください",
+	"models.invalid_response":        "上流から無効なモデル一覧が返されました",
+	"models.upstream_status":         "上流のモデル取得に失敗しました（HTTP {{.status}}）。キーとアクセス権限を確認してください",
+
 	// Common messages
 	"success":        "操作成功",
 	"common.success": "成功",

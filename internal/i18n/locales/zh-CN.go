@@ -2,6 +2,17 @@ package locales
 
 // Messages Chinese (Simplified) translations
 var MessagesZhCN = map[string]string{
+	// Model list queries
+	"models.invalid_proxy":           "代理地址无效，请检查代理配置",
+	"models.standard_group_required": "仅普通分组支持获取模型",
+	"models.invalid_upstream":        "请填写有效的 HTTP 或 HTTPS 上游地址",
+	"models.no_active_key":           "该分组没有可用的 active 密钥",
+	"models.decrypt_failed":          "密钥解密失败，无法获取模型",
+	"models.request_failed":          "模型获取请求失败，请检查上游地址和代理配置",
+	"models.timeout":                 "模型获取超时，请稍后重试",
+	"models.invalid_response":        "上游返回了无效的模型列表",
+	"models.upstream_status":         "上游拒绝模型查询（HTTP {{.status}}），请检查密钥和访问权限",
+
 	// Common messages
 	"success":        "操作成功",
 	"common.success": "操作成功",

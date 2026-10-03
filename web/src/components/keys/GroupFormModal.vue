@@ -5,6 +5,7 @@ import ProxyKeysInput from "@/components/common/ProxyKeysInput.vue";
 import type { Group, GroupConfigOption, UpstreamInfo } from "@/types/models";
 import { Add, Close, HelpCircleOutline, Remove } from "@vicons/ionicons5";
 import {
+  NAutoComplete,
   NButton,
   NCard,
   NForm,
@@ -17,9 +18,10 @@ import {
   NSwitch,
   NTooltip,
   useMessage,
+  type AutoCompleteInst,
   type FormRules,
 } from "naive-ui";
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 interface Props {
@@ -111,6 +113,41 @@ const configOptions = ref<GroupConfigOption[]>([]);
 const channelTypesFetched = ref(false);
 const configOptionsFetched = ref(false);
 
+const modelsLoading = ref(false);
+const modelCandidates = ref<string[]>([]);
+const modelSearch = ref("");
+const modelInputRef = ref<AutoCompleteInst | null>(null);
+let modelRequest: AbortController | null = null;
+const canFetchModels = computed(() => !!props.group?.id && formData.group_type !== "aggregate");
+const modelOptions = computed(() => {
+  const search = modelSearch.value.toLowerCase();
+  return modelCandidates.value.filter(id => id.toLowerCase().includes(search));
+});
+
+// 查询条件变化后清空候选并取消旧请求，保留测试模型输入。
+function invalidateModelCandidates() {
+  modelRequest?.abort();
+  modelRequest = null;
+  modelsLoading.value = false;
+  modelCandidates.value = [];
+}
+
+watch(
+  () => [
+    props.show,
+    props.group?.id,
+    formData.name,
+    formData.group_type,
+    formData.channel_type,
+    formData.upstreams,
+    formData.configItems,
+    formData.header_rules,
+  ],
+  invalidateModelCandidates,
+  { deep: true, flush: "sync" }
+);
+onBeforeUnmount(invalidateModelCandidates);
+
 // 跟踪用户是否已手动修改过字段（仅在新增模式下使用）
 const userModifiedFields = ref({
   test_model: false,
@@ -199,10 +236,10 @@ const rules: FormRules = {
   ],
 };
 
-// 监听弹窗显示状态
+// 打开弹窗或切换分组时加载表单。
 watch(
-  () => props.show,
-  show => {
+  () => [props.show, props.group?.id] as const,
+  ([show]) => {
     if (show) {
       if (!channelTypesFetched.value) {
         fetchChannelTypes();
@@ -455,7 +492,87 @@ const getConfigOption = (key: string) => {
 
 // 关闭弹窗
 function handleClose() {
+  invalidateModelCandidates();
   emit("update:show", false);
+}
+
+// 保存和获取模型共用配置及请求头整理逻辑。
+function getRequestSettings() {
+  // 将configItems转换为config对象
+  const config: Record<string, number | string | boolean> = {};
+  formData.configItems.forEach((item: ConfigItem) => {
+    if (item.key && item.key.trim()) {
+      const option = configOptions.value.find(opt => opt.key === item.key);
+      if (option && typeof option.default_value === "number" && typeof item.value === "string") {
+        const numValue = Number(item.value);
+        config[item.key] = isNaN(numValue) ? 0 : numValue;
+      } else {
+        config[item.key] = item.value;
+      }
+    }
+  });
+  return {
+    config,
+    header_rules: formData.header_rules
+      .filter(rule => rule.key.trim())
+      .map(rule => ({ key: rule.key.trim(), value: rule.value, action: rule.action })),
+  };
+}
+
+// 自由输入只影响候选搜索，不取消模型查询。
+function handleModelInput(value: string | null) {
+  modelSearch.value = value || "";
+  if (!props.group) {
+    userModifiedFields.value.test_model = true;
+  }
+}
+
+// 获取候选但不替换当前模型；只有用户选择候选时才填入。
+async function fetchModels() {
+  if (!canFetchModels.value || !props.group?.id || modelsLoading.value) {
+    return;
+  }
+  const upstream = formData.upstreams.find(item => item.weight > 0);
+  if (!upstream?.url.trim()) {
+    message.warning(t("keys.modelsNoUpstream"));
+    return;
+  }
+  invalidateModelCandidates();
+  const request = new AbortController();
+  modelRequest = request;
+  modelsLoading.value = true;
+  try {
+    const models = await keysApi.fetchGroupModels(
+      props.group.id,
+      {
+        name: formData.name,
+        channel_type: formData.channel_type,
+        upstream_url: upstream.url.trim(),
+        ...getRequestSettings(),
+      },
+      request.signal
+    );
+    if (modelRequest !== request) {
+      return;
+    }
+    modelCandidates.value = models;
+    modelSearch.value = "";
+    if (models.length === 0) {
+      message.info(t("keys.modelsEmpty"));
+      return;
+    }
+    await nextTick();
+    if (modelRequest === request) {
+      modelInputRef.value?.focus();
+    }
+  } catch {
+    // 请求错误由统一拦截器提示，主动取消不显示错误。
+  } finally {
+    if (modelRequest === request) {
+      modelsLoading.value = false;
+      modelRequest = null;
+    }
+  }
 }
 
 // 提交表单
@@ -503,19 +620,7 @@ async function handleSubmit() {
       }
     }
 
-    // 将configItems转换为config对象
-    const config: Record<string, number | string | boolean> = {};
-    formData.configItems.forEach((item: ConfigItem) => {
-      if (item.key && item.key.trim()) {
-        const option = configOptions.value.find(opt => opt.key === item.key);
-        if (option && typeof option.default_value === "number" && typeof item.value === "string") {
-          const numValue = Number(item.value);
-          config[item.key] = isNaN(numValue) ? 0 : numValue;
-        } else {
-          config[item.key] = item.value;
-        }
-      }
-    });
+    const requestSettings = getRequestSettings();
 
     // 构建提交数据
     const submitData = {
@@ -530,14 +635,7 @@ async function handleSubmit() {
       param_overrides: paramOverrides,
       model_redirect_rules: modelRedirectRules,
       model_redirect_strict: formData.model_redirect_strict,
-      config,
-      header_rules: formData.header_rules
-        .filter((rule: HeaderRuleItem) => rule.key.trim())
-        .map((rule: HeaderRuleItem) => ({
-          key: rule.key.trim(),
-          value: rule.value,
-          action: rule.action,
-        })),
+      ...requestSettings,
       proxy_keys: formData.proxy_keys,
     };
 
@@ -682,11 +780,24 @@ async function handleSubmit() {
                   </n-tooltip>
                 </div>
               </template>
-              <n-input
-                v-model:value="formData.test_model"
-                :placeholder="testModelPlaceholder"
-                @input="() => !props.group && (userModifiedFields.test_model = true)"
-              />
+              <div class="test-model-input">
+                <n-auto-complete
+                  ref="modelInputRef"
+                  v-model:value="formData.test_model"
+                  :options="modelOptions"
+                  :placeholder="testModelPlaceholder"
+                  :get-show="() => modelOptions.length > 0"
+                  @update:value="handleModelInput"
+                />
+                <n-button
+                  v-if="canFetchModels"
+                  :loading="modelsLoading"
+                  :disabled="modelsLoading"
+                  @click="fetchModels"
+                >
+                  {{ t("keys.fetchModels") }}
+                </n-button>
+              </div>
             </n-form-item>
 
             <n-form-item
@@ -1186,6 +1297,17 @@ async function handleSubmit() {
 <style scoped>
 .group-form-modal {
   width: 800px;
+}
+
+.test-model-input {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.test-model-input :deep(.n-auto-complete) {
+  flex: 1;
+  min-width: 0;
 }
 
 .form-section {

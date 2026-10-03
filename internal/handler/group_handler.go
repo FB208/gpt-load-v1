@@ -99,6 +99,30 @@ func (s *Server) CreateGroup(c *gin.Context) {
 	response.Success(c, s.newGroupResponse(group))
 }
 
+// FetchGroupModels queries model IDs using the current draft and an existing group key.
+func (s *Server) FetchGroupModels(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil || id == 0 {
+		response.ErrorI18nFromAPIError(c, app_errors.ErrBadRequest, "validation.invalid_group_id")
+		return
+	}
+
+	var req services.GroupModelsParams
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, app_errors.ErrInvalidJSON)
+		return
+	}
+
+	modelIDs, err := s.GroupService.FetchModels(c.Request.Context(), uint(id), req)
+	if c.Request.Context().Err() != nil {
+		return
+	}
+	if s.handleGroupError(c, err) {
+		return
+	}
+	response.Success(c, modelIDs)
+}
+
 // ListGroups handles listing all groups.
 func (s *Server) ListGroups(c *gin.Context) {
 	groups, err := s.GroupService.ListGroups(c.Request.Context())
