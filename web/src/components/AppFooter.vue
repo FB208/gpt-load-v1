@@ -223,7 +223,7 @@ onMounted(() => {
               tbphp
             </a>
           </span>
-          <span class="license-text">MIT License</span>
+          <span class="license-text">AGPL-3.0-only</span>
         </div>
       </div>
     </div>
