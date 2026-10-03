@@ -1,4 +1,4 @@
-# 放在 DEPLOY_DIR（默认 /home/DockerCompose/gpt-load）。
+# 放在 DEPLOY_DIR（当前服务器为 /home/gpt-load）。
 # 本目录 .env 仅保存 REGISTRY_REPO / VERSION；应用配置和数据放在下方独立目录。
 services:
   gpt-load:
@@ -9,6 +9,8 @@ services:
       - "com.centurylinklabs.watchtower.enable=false"
     ports:
       - "3001:3001"
+    networks:
+      - mynet
     env_file:
       - /home/DockerVolumes/gpt-load/.env
     volumes:
@@ -20,3 +22,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+# 复用已有网络，访问现有 MySQL 和 Redis。
+networks:
+  mynet:
+    external: true
+    name: mynet
