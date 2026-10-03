@@ -67,6 +67,8 @@ docker run -d --name gpt-load \
 
 > v1 维护线的稳定 Docker 标签为 `1`。v1 发布不再更新 `latest`；过渡期结束后，`latest` 可能切换至 v2。现有 v1 部署请将镜像固定为 `:1`。
 
+自建镜像仓库与 `mark-v*` 自动部署请参考 [部署说明](deploy/README.md)。
+
 ### 方式二：使用 Docker Compose（推荐）
 
 **安装命令：**

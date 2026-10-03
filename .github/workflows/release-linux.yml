@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - "*"
+      - "!mark-v*"
 jobs:
   release:
     runs-on: ubuntu-latest

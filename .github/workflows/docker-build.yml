@@ -1,66 +1,234 @@
-name: Build Docker Image
+name: Deploy on Tag
 
+# 只认 mark-v 前缀，上游 v* tag 不触发部署
 on:
   push:
     tags:
-      - "v1.*"
+      - 'mark-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and deploy (e.g. mark-v1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
 jobs:
-  build_docker_image:
-    name: Build Docker Image
+  build-and-push:
+    name: Build and push image
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      packages: write
-      contents: read
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # Dockerfile 的 VERSION build-arg 同时传给前端和 Go 版本号。
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          case "$TAG" in
+            mark-v*) ;;
+            *)
+              echo "::error::Tag '$TAG' must start with 'mark-v'; upstream tags are intentionally ignored"
+              exit 1
+              ;;
+          esac
+          # 镜像和运行时只保留去掉前缀的版本号：mark-v1.2.3 -> v1.2.3
+          VERSION="${TAG#mark-}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building $TAG as $VERSION"
+
+      - name: Compose image tags
+        id: tags
+        env:
+          REGISTRY_REPO: ${{ secrets.REGISTRY_REPO }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REGISTRY_REPO" ]; then
+            echo "::error::Secret REGISTRY_REPO is not set"
+            exit 1
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$REGISTRY_REPO:$VERSION"
+            # 预发布 tag（v1.2.3-beta.1 这种带连字符的）不动 latest
+            if [ "${VERSION#*-}" = "$VERSION" ]; then
+              echo "$REGISTRY_REPO:latest"
+            fi
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Log in to container registry
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
-          platforms: arm64
+          registry: ${{ secrets.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
+      - name: Extract metadata (labels)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: |
-            tbphp/gpt-load
-            ghcr.io/${{ github.repository }}
-          flavor: |
-            latest=false
-          tags: |
-            type=ref,event=tag
-            type=raw,value=beta,enable=${{ contains(github.ref, '-beta') }}
-            type=raw,value=1,enable=${{ !contains(github.ref, '-') }}
+          images: ${{ secrets.REGISTRY_REPO }}
 
-      - name: Build and push Docker image
+      - name: Build and push
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          file: Dockerfile
+          platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.version.outputs.version }}
+
+      - name: Image summary
+        env:
+          TAGS: ${{ steps.tags.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### Pushed image"
+            echo '```'
+            echo "$TAGS"
+            echo "$DIGEST"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy over SSH
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # 敏感值一律通过 envs 注入，不在 script 里内联 secrets 表达式：
+      # 内联会把明文拼进远端 shell 命令行，容易随报错或 history 泄漏。
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+          REGISTRY: ${{ secrets.REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_REPO: ${{ secrets.REGISTRY_REPO }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          command_timeout: 20m
+          envs: VERSION,REGISTRY,REGISTRY_USERNAME,REGISTRY_PASSWORD,REGISTRY_REPO,DEPLOY_DIR
+          script: |
+            set -eu
+
+            if docker compose version >/dev/null 2>&1; then
+              DC="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              DC="docker-compose"
+            else
+              echo "docker compose not found on the server"
+              exit 1
+            fi
+
+            cd "$DEPLOY_DIR"
+            if [ ! -f docker-compose.yml ]; then
+              echo "docker-compose.yml not found in $DEPLOY_DIR"
+              exit 1
+            fi
+
+            echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+
+            # 把本次要部署的镜像写回 .env，compose 用 REGISTRY_REPO/VERSION 引用它
+            touch .env
+            grep -v -E '^(REGISTRY_REPO|VERSION)=' .env > .env.deploy.tmp || true
+            printf 'REGISTRY_REPO=%s\nVERSION=%s\n' "$REGISTRY_REPO" "$VERSION" >> .env.deploy.tmp
+            mv .env.deploy.tmp .env
+
+            echo "Deploying $REGISTRY_REPO:$VERSION"
+            $DC pull gpt-load
+            $DC up -d --no-build gpt-load
+
+            echo "Waiting for gpt-load to become healthy"
+            i=0
+            while [ "$i" -lt 60 ]; do
+              i=$((i + 1))
+              state=$(docker inspect -f '{{.State.Status}}' gpt-load 2>/dev/null || echo missing)
+              health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' gpt-load 2>/dev/null || echo none)
+              case "$state" in
+                running)
+                  if [ "$health" = "healthy" ]; then
+                    echo "Container is up (state=$state health=$health)"
+                    break
+                  fi
+                  ;;
+                created|restarting)
+                  ;;
+                *)
+                  echo "Container is in an unexpected state: $state"
+                  $DC logs --tail=100 gpt-load || true
+                  exit 1
+                  ;;
+              esac
+              if [ "$i" -ge 60 ]; then
+                echo "Timed out waiting for the container (state=$state health=$health)"
+                $DC logs --tail=100 gpt-load || true
+                exit 1
+              fi
+              sleep 3
+            done
+
+            docker logout "$REGISTRY" || true
+
+  notify:
+    name: Send deployment email
+    needs:
+      - build-and-push
+      - deploy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send email
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@67ce3558d613188179559c61d3565140cf389968 # v22
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          secure: false
+          require_tls: true
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          from: ${{ secrets.GMAIL_USERNAME }}
+          to: ${{ secrets.GMAIL_TO }}
+          subject: "[gpt-load] ${{ needs.build-and-push.outputs.tag || github.ref_name }} 部署结果: build=${{ needs.build-and-push.result }}, deploy=${{ needs.deploy.result }}"
+          body: |
+            仓库: ${{ github.repository }}
+            Tag: ${{ needs.build-and-push.outputs.tag || github.ref_name }}
+            镜像版本: ${{ needs.build-and-push.outputs.version }}
+            触发: ${{ github.event_name }}
+            构建: ${{ needs.build-and-push.result }}
+            部署: ${{ needs.deploy.result }}
+            提交: ${{ github.sha }}
+            运行链接: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            触发人: ${{ github.actor }}
