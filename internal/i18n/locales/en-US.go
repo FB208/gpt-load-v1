@@ -2,17 +2,6 @@ package locales
 
 // Messages English (US) translations
 var MessagesEnUS = map[string]string{
-	// Model list queries
-	"models.invalid_proxy":           "Invalid proxy URL; check the proxy settings",
-	"models.standard_group_required": "Model fetching is only available for standard groups",
-	"models.invalid_upstream":        "Enter a valid HTTP or HTTPS upstream URL",
-	"models.no_active_key":           "This group has no active API key",
-	"models.decrypt_failed":          "Failed to decrypt the API key for model fetching",
-	"models.request_failed":          "Failed to fetch models; check the upstream URL and proxy settings",
-	"models.timeout":                 "Model fetching timed out; please try again later",
-	"models.invalid_response":        "The upstream returned an invalid model list",
-	"models.upstream_status":         "Upstream model query failed (HTTP {{.status}}); check the key and access permissions",
-
 	// Common messages
 	"success":        "Operation successful",
 	"common.success": "Success",

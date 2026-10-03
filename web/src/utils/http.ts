@@ -45,9 +45,6 @@ http.interceptors.response.use(
   },
   error => {
     appState.loading = false;
-    if (axios.isCancel(error)) {
-      return Promise.reject(error);
-    }
     if (error.response) {
       if (error.response.status === 401) {
         if (window.location.pathname !== "/login") {

@@ -87,15 +87,6 @@ export interface Group {
   updated_at?: string;
 }
 
-// 获取模型时使用当前表单配置，不提交密钥或测试模型。
-export interface GroupModelsRequest {
-  name: string;
-  channel_type: ChannelType;
-  upstream_url: string;
-  config: Record<string, unknown>;
-  header_rules: HeaderRule[];
-}
-
 export interface GroupConfigOption {
   key: string;
   name: string;
