@@ -11,6 +11,11 @@ on:
         description: 'Existing tag to build and deploy (e.g. mark-v1.2.3)'
         required: true
         type: string
+      targets:
+        description: 'Comma-separated environments to deploy (e.g. prod-1,prod-2); empty = all in DEPLOY_TARGETS'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -23,7 +28,49 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      targets: ${{ steps.targets.outputs.targets }}
     steps:
+      # 构建前先校验部署目标，配置有误时不白跑构建；同时拦住手输的错误环境名，
+      # 否则 GitHub 会按这个名字自动建出一个没有任何 secrets 的空环境。
+      - name: Resolve deploy targets
+        id: targets
+        env:
+          DEPLOY_TARGETS: ${{ vars.DEPLOY_TARGETS }}
+          INPUT_TARGETS: ${{ inputs.targets }}
+        shell: python
+        run: |
+          import json, os, re, sys
+
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+          raw = os.environ.get("DEPLOY_TARGETS", "").strip()
+          if not raw:
+              fail("Repository variable DEPLOY_TARGETS is not set; run deploy/sync-secrets.ps1")
+          try:
+              all_targets = json.loads(raw)
+          except json.JSONDecodeError as e:
+              fail(f"DEPLOY_TARGETS is not valid JSON: {e}")
+          if (
+              not isinstance(all_targets, list)
+              or not all_targets
+              or not all(isinstance(t, str) and re.fullmatch(r"[A-Za-z0-9._-]+", t) for t in all_targets)
+              or len(set(all_targets)) != len(all_targets)
+          ):
+              fail("DEPLOY_TARGETS must be a non-empty JSON array of unique environment names")
+
+          selected = [t.strip() for t in os.environ.get("INPUT_TARGETS", "").split(",") if t.strip()]
+          unknown = [t for t in selected if t not in all_targets]
+          if unknown:
+              fail(f"Unknown deploy targets: {', '.join(unknown)}; allowed: {', '.join(all_targets)}")
+
+          # 始终按 DEPLOY_TARGETS 的顺序部署，与手动输入的顺序无关
+          targets = [t for t in all_targets if not selected or t in selected]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"targets={json.dumps(targets, separators=(',', ':'))}\n")
+          print(f"Deploy targets: {', '.join(targets)}")
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -116,12 +163,44 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # 每台服务器对应一个同名 GitHub Environment，SSH_* / DEPLOY_DIR 存在各自环境的 secrets 里，
+  # 下面 secrets.* 取到的是当前 matrix 环境的值。
+  # 逐台滚动部署：上一台健康检查通过才部署下一台；任一台失败即取消剩余的，已部署的不回滚。
   deploy:
-    name: Deploy over SSH
+    name: Deploy to ${{ matrix.target }}
     needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        target: ${{ fromJSON(needs.build-and-push.outputs.targets) }}
+    environment: ${{ matrix.target }}
+    concurrency:
+      group: deploy-${{ matrix.target }}
+      cancel-in-progress: false
     steps:
+      # 环境漏配 secret 时直接指出缺哪个，而不是让 ssh-action 报一个难懂的连接错误
+      - name: Check server secrets
+        env:
+          TARGET: ${{ matrix.target }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        run: |
+          missing=""
+          for name in SSH_HOST SSH_USER SSH_PASSWORD DEPLOY_DIR; do
+            if [ -z "${!name:-}" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Environment '$TARGET' is missing secrets:$missing"
+            exit 1
+          fi
+
       # 敏感值一律通过 envs 注入，不在 script 里内联 secrets 表达式：
       # 内联会把明文拼进远端 shell 命令行，容易随报错或 history 泄漏。
       - name: Deploy over SSH
@@ -226,6 +305,7 @@ jobs:
             仓库: ${{ github.repository }}
             Tag: ${{ needs.build-and-push.outputs.tag || github.ref_name }}
             镜像版本: ${{ needs.build-and-push.outputs.version }}
+            部署目标: ${{ needs.build-and-push.outputs.targets }}
             触发: ${{ github.event_name }}
             构建: ${{ needs.build-and-push.result }}
             部署: ${{ needs.deploy.result }}
