@@ -350,6 +350,12 @@ export default {
     addHeader: "添加请求头",
     paramOverridesTooltip:
       "使用JSON格式定义要覆盖的API请求参数。这些参数会在发送请求时合并到原始参数中",
+    chatToResponses: "Chat 转 Responses",
+    chatToResponsesTooltip:
+      "开启后，/v1/chat/completions 请求会转换为 /v1/responses 发往上游，再把结果转换回 Chat Completions 格式。用于上游已不支持在 Chat Completions 中使用工具调用等能力的模型",
+    responsesReasoningSummary: "返回推理摘要",
+    responsesReasoningSummaryTooltip:
+      "开启后向上游请求推理摘要，并以 reasoning_content 字段返回。仅对推理模型开启，部分模型要求组织已完成认证",
     modelRedirectPolicy: "未配置模型策略",
     modelRedirectPolicyTooltip: "选择如何处理未在重定向规则中配置的模型请求",
     modelRedirectStrictMode: "严格模式：拒绝未配置的模型请求（返回404）",

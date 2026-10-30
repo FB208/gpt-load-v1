@@ -78,6 +78,8 @@ export interface Group {
   param_overrides: Record<string, unknown>;
   model_redirect_rules: Record<string, string>;
   model_redirect_strict: boolean;
+  chat_to_responses?: boolean;
+  responses_reasoning_summary?: boolean;
   header_rules?: HeaderRule[];
   proxy_keys: string;
   group_type?: GroupType;

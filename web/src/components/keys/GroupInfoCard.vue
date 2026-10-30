@@ -727,6 +727,21 @@ function resetPage() {
                     </div>
                   </n-form-item>
                   <n-form-item
+                    v-if="group?.chat_to_responses"
+                    :label="`${t('keys.chatToResponses')}：`"
+                    :span="2"
+                  >
+                    <n-tag type="info" size="small">/v1/chat/completions → /v1/responses</n-tag>
+                    <n-tag
+                      v-if="group?.responses_reasoning_summary"
+                      type="success"
+                      size="small"
+                      style="margin-left: 8px"
+                    >
+                      {{ t("keys.responsesReasoningSummary") }}
+                    </n-tag>
+                  </n-form-item>
+                  <n-form-item
                     v-if="group?.model_redirect_rules"
                     :label="`${t('keys.modelRedirectPolicy')}：`"
                     :span="2"

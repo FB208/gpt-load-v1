@@ -76,6 +76,8 @@ interface GroupFormData {
   param_overrides: string;
   model_redirect_rules: string;
   model_redirect_strict: boolean;
+  chat_to_responses: boolean;
+  responses_reasoning_summary: boolean;
   config: Record<string, number | string | boolean>;
   configItems: ConfigItem[];
   header_rules: HeaderRuleItem[];
@@ -101,6 +103,8 @@ const formData = reactive<GroupFormData>({
   param_overrides: "",
   model_redirect_rules: "",
   model_redirect_strict: false,
+  chat_to_responses: false,
+  responses_reasoning_summary: false,
   config: {},
   configItems: [] as ConfigItem[],
   header_rules: [] as HeaderRuleItem[],
@@ -162,6 +166,11 @@ const validationEndpointPlaceholder = computed(() => {
       return t("keys.enterValidationPath");
   }
 });
+
+// Chat Completions 转 Responses 仅适用于 openai 渠道的标准分组
+const supportsChatToResponses = computed(
+  () => formData.channel_type === "openai" && formData.group_type !== "aggregate"
+);
 
 // 表单验证规则
 const rules: FormRules = {
@@ -363,6 +372,8 @@ function resetForm() {
     param_overrides: "",
     model_redirect_rules: "",
     model_redirect_strict: false,
+    chat_to_responses: false,
+    responses_reasoning_summary: false,
     config: {},
     configItems: [],
     header_rules: [],
@@ -405,6 +416,8 @@ function loadGroupData() {
     param_overrides: JSON.stringify(props.group.param_overrides || {}, null, 2),
     model_redirect_rules: JSON.stringify(props.group.model_redirect_rules || {}, null, 2),
     model_redirect_strict: props.group.model_redirect_strict || false,
+    chat_to_responses: props.group.chat_to_responses || false,
+    responses_reasoning_summary: props.group.responses_reasoning_summary || false,
     config: {},
     configItems,
     header_rules: (props.group.header_rules || []).map((rule: HeaderRuleItem) => ({
@@ -598,6 +611,11 @@ async function handleSubmit() {
       param_overrides: paramOverrides,
       model_redirect_rules: modelRedirectRules,
       model_redirect_strict: formData.model_redirect_strict,
+      chat_to_responses: supportsChatToResponses.value && formData.chat_to_responses,
+      responses_reasoning_summary:
+        supportsChatToResponses.value &&
+        formData.chat_to_responses &&
+        formData.responses_reasoning_summary,
       config,
       header_rules: formData.header_rules
         .filter((rule: HeaderRuleItem) => rule.key.trim())
@@ -1164,6 +1182,39 @@ async function handleSubmit() {
                     {{ t("keys.addHeader") }}
                   </n-button>
                 </div>
+              </div>
+
+              <!-- Chat Completions 转 Responses 配置 -->
+              <div v-if="supportsChatToResponses" class="config-section">
+                <n-form-item path="chat_to_responses">
+                  <template #label>
+                    <div class="form-label-with-tooltip">
+                      {{ t("keys.chatToResponses") }}
+                      <n-tooltip trigger="hover" placement="top">
+                        <template #trigger>
+                          <n-icon :component="HelpCircleOutline" class="help-icon config-help" />
+                        </template>
+                        {{ t("keys.chatToResponsesTooltip") }}
+                      </n-tooltip>
+                    </div>
+                  </template>
+                  <n-switch v-model:value="formData.chat_to_responses" />
+                </n-form-item>
+
+                <n-form-item v-if="formData.chat_to_responses" path="responses_reasoning_summary">
+                  <template #label>
+                    <div class="form-label-with-tooltip">
+                      {{ t("keys.responsesReasoningSummary") }}
+                      <n-tooltip trigger="hover" placement="top">
+                        <template #trigger>
+                          <n-icon :component="HelpCircleOutline" class="help-icon config-help" />
+                        </template>
+                        {{ t("keys.responsesReasoningSummaryTooltip") }}
+                      </n-tooltip>
+                    </div>
+                  </template>
+                  <n-switch v-model:value="formData.responses_reasoning_summary" />
+                </n-form-item>
               </div>
 
               <!-- 模型重定向配置 -->

@@ -362,6 +362,12 @@ export default {
     addHeader: "ヘッダー追加",
     paramOverridesTooltip:
       "JSON形式を使用して、上書きするAPIリクエストパラメータを定義します。これらのパラメータは、リクエスト送信時に元のパラメータにマージされます。",
+    chatToResponses: "Chat から Responses への変換",
+    chatToResponsesTooltip:
+      "有効にすると、/v1/chat/completions リクエストを /v1/responses に変換してアップストリームに送信し、結果を Chat Completions 形式に戻します。Chat Completions でツール呼び出しなどがサポートされなくなったモデル向けです",
+    responsesReasoningSummary: "推論サマリーを返す",
+    responsesReasoningSummaryTooltip:
+      "有効にすると、アップストリームに推論サマリーを要求し、reasoning_content フィールドで返します。推論モデルでのみ有効にしてください。一部のモデルでは組織の認証が必要です",
     modelRedirectPolicy: "未設定モデルポリシー",
     modelRedirectPolicyTooltip:
       "リダイレクトルールで設定されていないモデルのリクエストをどう処理するか選択",

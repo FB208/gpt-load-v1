@@ -110,7 +110,16 @@ func (ps *ProxyServer) HandleProxy(c *gin.Context) {
 
 	isStream := channelHandler.IsStreamRequest(c, bodyBytes)
 
-	ps.executeRequestWithRetry(c, channelHandler, originalGroup, group, finalBodyBytes, isStream, startTime, 0)
+	var conversion *chatResponsesConversion
+	if shouldConvertChatToResponses(c, group) {
+		conversion, finalBodyBytes, err = newChatResponsesConversion(c, group, finalBodyBytes, isStream)
+		if err != nil {
+			response.Error(c, app_errors.NewAPIError(app_errors.ErrBadRequest, err.Error()))
+			return
+		}
+	}
+
+	ps.executeRequestWithRetry(c, channelHandler, originalGroup, group, finalBodyBytes, isStream, startTime, 0, conversion)
 }
 
 // executeRequestWithRetry is the core recursive function for handling requests and retries.
@@ -123,18 +132,27 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	isStream bool,
 	startTime time.Time,
 	retryCount int,
+	conversion *chatResponsesConversion,
 ) {
 	cfg := group.EffectiveConfig
+
+	// Request logs and model extraction keep the body the client sent.
+	logBody := bodyBytes
+	requestURL := c.Request.URL
+	if conversion != nil {
+		logBody = conversion.originalBody
+		requestURL = conversion.requestURL
+	}
 
 	apiKey, err := ps.keyProvider.SelectKey(group.ID)
 	if err != nil {
 		logrus.Errorf("Failed to select a key for group %s on attempt %d: %v", group.Name, retryCount+1, err)
 		response.Error(c, app_errors.NewAPIError(app_errors.ErrNoKeysAvailable, err.Error()))
-		ps.logRequest(c, originalGroup, group, nil, startTime, http.StatusServiceUnavailable, err, isStream, "", channelHandler, bodyBytes, models.RequestTypeFinal)
+		ps.logRequest(c, originalGroup, group, nil, startTime, http.StatusServiceUnavailable, err, isStream, "", channelHandler, logBody, models.RequestTypeFinal)
 		return
 	}
 
-	upstreamURL, err := channelHandler.BuildUpstreamURL(c.Request.URL, originalGroup.Name)
+	upstreamURL, err := channelHandler.BuildUpstreamURL(requestURL, originalGroup.Name)
 	if err != nil {
 		response.Error(c, app_errors.NewAPIError(app_errors.ErrInternalServer, fmt.Sprintf("Failed to build upstream URL: %v", err)))
 		return
@@ -165,11 +183,16 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	req.Header.Del("X-Api-Key")
 	req.Header.Del("X-Goog-Api-Key")
 
+	// The converter needs a plain body; let the transport negotiate compression itself.
+	if conversion != nil {
+		req.Header.Del("Accept-Encoding")
+	}
+
 	// Apply model redirection
 	finalBodyBytes, err := channelHandler.ApplyModelRedirect(req, bodyBytes, group)
 	if err != nil {
 		response.Error(c, app_errors.NewAPIError(app_errors.ErrBadRequest, err.Error()))
-		ps.logRequest(c, originalGroup, group, apiKey, startTime, http.StatusBadRequest, err, isStream, upstreamURL, channelHandler, bodyBytes, models.RequestTypeFinal)
+		ps.logRequest(c, originalGroup, group, apiKey, startTime, http.StatusBadRequest, err, isStream, upstreamURL, channelHandler, logBody, models.RequestTypeFinal)
 		return
 	}
 
@@ -206,7 +229,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	if err != nil || shouldRetryByStatus {
 		if err != nil && app_errors.IsIgnorableError(err) {
 			logrus.Debugf("Client-side ignorable error for key %s, aborting retries: %v", utils.MaskAPIKey(apiKey.KeyValue), err)
-			ps.logRequest(c, originalGroup, group, apiKey, startTime, 499, err, isStream, upstreamURL, channelHandler, bodyBytes, models.RequestTypeFinal)
+			ps.logRequest(c, originalGroup, group, apiKey, startTime, 499, err, isStream, upstreamURL, channelHandler, logBody, models.RequestTypeFinal)
 			return
 		}
 
@@ -249,7 +272,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 			requestType = models.RequestTypeFinal
 		}
 
-		ps.logRequest(c, originalGroup, group, apiKey, startTime, statusCode, errors.New(parsedError), isStream, upstreamURL, channelHandler, bodyBytes, requestType)
+		ps.logRequest(c, originalGroup, group, apiKey, startTime, statusCode, errors.New(parsedError), isStream, upstreamURL, channelHandler, logBody, requestType)
 
 		// 如果是最后一次尝试，直接返回错误，不再递归
 		if isLastAttempt {
@@ -262,7 +285,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 			return
 		}
 
-		ps.executeRequestWithRetry(c, channelHandler, originalGroup, group, bodyBytes, isStream, startTime, retryCount+1)
+		ps.executeRequestWithRetry(c, channelHandler, originalGroup, group, bodyBytes, isStream, startTime, retryCount+1, conversion)
 		return
 	}
 
@@ -272,6 +295,8 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	// Check if this is a model list request (needs special handling)
 	if shouldInterceptModelList(c.Request.URL.Path, c.Request.Method) {
 		ps.handleModelListResponse(c, resp, group, channelHandler)
+	} else if conversion != nil && resp.StatusCode < http.StatusBadRequest {
+		ps.handleConvertedResponse(c, resp, isStream, conversion)
 	} else {
 		for key, values := range resp.Header {
 			for _, value := range values {
@@ -287,7 +312,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		}
 	}
 
-	ps.logRequest(c, originalGroup, group, apiKey, startTime, resp.StatusCode, nil, isStream, upstreamURL, channelHandler, bodyBytes, models.RequestTypeFinal)
+	ps.logRequest(c, originalGroup, group, apiKey, startTime, resp.StatusCode, nil, isStream, upstreamURL, channelHandler, logBody, models.RequestTypeFinal)
 }
 
 func shouldFailoverOnStatusCode(statusCode int, group *models.Group) bool {

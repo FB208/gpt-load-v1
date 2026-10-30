@@ -363,6 +363,12 @@ export default {
     addHeader: "Add Header",
     paramOverridesTooltip:
       "Define the API request parameters to be overridden using JSON format. These parameters will be merged with the original parameters when sending the request.",
+    chatToResponses: "Chat to Responses",
+    chatToResponsesTooltip:
+      "When enabled, /v1/chat/completions requests are converted to /v1/responses for the upstream, and the results are converted back to the Chat Completions format. Use it for models whose Chat Completions endpoint no longer supports features such as tool calling",
+    responsesReasoningSummary: "Return Reasoning Summary",
+    responsesReasoningSummaryTooltip:
+      "When enabled, reasoning summaries are requested from the upstream and returned in the reasoning_content field. Enable only for reasoning models; some models require a verified organization",
     modelRedirectPolicy: "Unconfigured Model Policy",
     modelRedirectPolicyTooltip:
       "Choose how to handle requests for models not configured in redirect rules",

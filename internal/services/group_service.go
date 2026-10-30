@@ -165,6 +165,8 @@ type GroupCreateParams struct {
 	ParamOverrides      map[string]any
 	ModelRedirectRules  map[string]string
 	ModelRedirectStrict bool
+	ChatToResponses     bool
+	ReasoningSummary    bool
 	Config              map[string]any
 	HeaderRules         []models.HeaderRule
 	ProxyKeys           string
@@ -187,6 +189,8 @@ type GroupUpdateParams struct {
 	ParamOverrides      map[string]any
 	ModelRedirectRules  map[string]string
 	ModelRedirectStrict *bool
+	ChatToResponses     *bool
+	ReasoningSummary    *bool
 	Config              map[string]any
 	HeaderRules         *[]models.HeaderRule
 	ProxyKeys           *string
@@ -312,10 +316,13 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 		ParamOverrides:      params.ParamOverrides,
 		ModelRedirectRules:  convertToJSONMap(params.ModelRedirectRules),
 		ModelRedirectStrict: params.ModelRedirectStrict,
+		ChatToResponses:     params.ChatToResponses,
+		ReasoningSummary:    params.ReasoningSummary,
 		Config:              cleanedConfig,
 		HeaderRules:         headerRulesJSON,
 		ProxyKeys:           strings.TrimSpace(params.ProxyKeys),
 	}
+	normalizeChatToResponses(&group)
 
 	tx := s.db.WithContext(ctx).Begin()
 	if err := tx.Error; err != nil {
@@ -521,6 +528,14 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 		group.ModelRedirectStrict = *params.ModelRedirectStrict
 	}
 
+	if params.ChatToResponses != nil {
+		group.ChatToResponses = *params.ChatToResponses
+	}
+
+	if params.ReasoningSummary != nil {
+		group.ReasoningSummary = *params.ReasoningSummary
+	}
+
 	if params.ValidationEndpoint != nil {
 		validationEndpoint := strings.TrimSpace(*params.ValidationEndpoint)
 		if !isValidValidationEndpoint(validationEndpoint) {
@@ -551,6 +566,8 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 		}
 		group.HeaderRules = headerRulesJSON
 	}
+
+	normalizeChatToResponses(&group)
 
 	if err := tx.Save(&group).Error; err != nil {
 		return nil, app_errors.ParseDBError(err)
@@ -1107,6 +1124,17 @@ func isValidValidationEndpoint(endpoint string) bool {
 		return false
 	}
 	return true
+}
+
+// normalizeChatToResponses clears the Chat-to-Responses options on groups that cannot use them:
+// only standard groups on the openai channel speak both APIs.
+func normalizeChatToResponses(group *models.Group) {
+	if group.ChannelType != "openai" || group.GroupType == "aggregate" {
+		group.ChatToResponses = false
+	}
+	if !group.ChatToResponses {
+		group.ReasoningSummary = false
+	}
 }
 
 // isValidChannelType checks channel type against registered channels.

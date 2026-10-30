@@ -99,6 +99,8 @@ type Group struct {
 	HeaderRules         datatypes.JSON       `gorm:"type:json" json:"header_rules"`
 	ModelRedirectRules  datatypes.JSONMap    `gorm:"type:json" json:"model_redirect_rules"`
 	ModelRedirectStrict bool                 `gorm:"default:false" json:"model_redirect_strict"`
+	ChatToResponses     bool                 `gorm:"default:false" json:"chat_to_responses"`           // serve chat completions via /v1/responses
+	ReasoningSummary    bool                 `gorm:"default:false" json:"responses_reasoning_summary"` // return reasoning summaries when converting
 	APIKeys             []APIKey             `gorm:"foreignKey:GroupID" json:"api_keys"`
 	SubGroups           []GroupSubGroup      `gorm:"-" json:"sub_groups,omitempty"`
 	LastValidatedAt     *time.Time           `json:"last_validated_at"`

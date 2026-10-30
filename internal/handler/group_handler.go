@@ -79,6 +79,8 @@ type GroupCreateRequest struct {
 	ParamOverrides      map[string]any      `json:"param_overrides"`
 	ModelRedirectRules  map[string]string   `json:"model_redirect_rules"`
 	ModelRedirectStrict bool                `json:"model_redirect_strict"`
+	ChatToResponses     bool                `json:"chat_to_responses"`
+	ReasoningSummary    bool                `json:"responses_reasoning_summary"`
 	Config              map[string]any      `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           string              `json:"proxy_keys"`
@@ -105,6 +107,8 @@ func (s *Server) CreateGroup(c *gin.Context) {
 		ParamOverrides:      req.ParamOverrides,
 		ModelRedirectRules:  req.ModelRedirectRules,
 		ModelRedirectStrict: req.ModelRedirectStrict,
+		ChatToResponses:     req.ChatToResponses,
+		ReasoningSummary:    req.ReasoningSummary,
 		Config:              req.Config,
 		HeaderRules:         req.HeaderRules,
 		ProxyKeys:           req.ProxyKeys,
@@ -148,6 +152,8 @@ type GroupUpdateRequest struct {
 	ParamOverrides      map[string]any      `json:"param_overrides"`
 	ModelRedirectRules  map[string]string   `json:"model_redirect_rules"`
 	ModelRedirectStrict *bool               `json:"model_redirect_strict"`
+	ChatToResponses     *bool               `json:"chat_to_responses"`
+	ReasoningSummary    *bool               `json:"responses_reasoning_summary"`
 	Config              map[string]any      `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           *string             `json:"proxy_keys,omitempty"`
@@ -209,6 +215,8 @@ func (s *Server) UpdateGroup(c *gin.Context) {
 		ParamOverrides:      req.ParamOverrides,
 		ModelRedirectRules:  req.ModelRedirectRules,
 		ModelRedirectStrict: req.ModelRedirectStrict,
+		ChatToResponses:     req.ChatToResponses,
+		ReasoningSummary:    req.ReasoningSummary,
 		Config:              req.Config,
 		ProxyKeys:           req.ProxyKeys,
 	}
@@ -279,6 +287,8 @@ type GroupResponse struct {
 	ParamOverrides      datatypes.JSONMap   `json:"param_overrides"`
 	ModelRedirectRules  datatypes.JSONMap   `json:"model_redirect_rules"`
 	ModelRedirectStrict bool                `json:"model_redirect_strict"`
+	ChatToResponses     bool                `json:"chat_to_responses"`
+	ReasoningSummary    bool                `json:"responses_reasoning_summary"`
 	Config              datatypes.JSONMap   `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           string              `json:"proxy_keys"`
@@ -323,6 +333,8 @@ func (s *Server) newGroupResponse(group *models.Group) *GroupResponse {
 		ParamOverrides:      group.ParamOverrides,
 		ModelRedirectRules:  group.ModelRedirectRules,
 		ModelRedirectStrict: group.ModelRedirectStrict,
+		ChatToResponses:     group.ChatToResponses,
+		ReasoningSummary:    group.ReasoningSummary,
 		Config:              group.Config,
 		HeaderRules:         headerRules,
 		ProxyKeys:           group.ProxyKeys,
