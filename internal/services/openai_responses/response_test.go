@@ -29,11 +29,11 @@ func runStream(t *testing.T, request string, opts Options, events ...string) []g
 	return chunks
 }
 
-const streamCreated = `{"type":"response.created","response":{"id":"resp_1","created_at":1700000000,"model":"gpt-6-luna"}}`
+const streamCreated = `{"type":"response.created","response":{"id":"resp_1","created_at":1700000000,"model":"gpt-6-luna","service_tier":"auto"}}`
 
 // TestStreamConverterText verifies text deltas, the first-chunk role, finish reason and usage chunk.
 func TestStreamConverterText(t *testing.T) {
-	completed := `{"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":2}}}}`
+	completed := `{"type":"response.completed","response":{"status":"completed","service_tier":"default","usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15,"input_tokens_details":{"cached_tokens":4},"output_tokens_details":{"reasoning_tokens":2}}}}`
 	chunks := runStream(t, `{"model":"m","stream":true,"stream_options":{"include_usage":true}}`, Options{},
 		streamCreated,
 		`{"type":"response.output_text.delta","delta":"Hel"}`,
@@ -50,6 +50,12 @@ func TestStreamConverterText(t *testing.T) {
 	expectJSON(t, chunks[0], "choices.0.delta", `{"role":"assistant","content":"Hel"}`)
 	expectJSON(t, chunks[1], "choices.0.delta", `{"content":"lo"}`)
 	expectJSON(t, chunks[2], "choices.0.finish_reason", `"stop"`)
+	// The requested tier echoed by response.created is not reported; the actual tier is.
+	if chunks[0].Get("service_tier").Exists() {
+		t.Errorf("early chunk reports requested service_tier: %s", chunks[0].Raw)
+	}
+	expectJSON(t, chunks[2], "service_tier", `"default"`)
+	expectJSON(t, chunks[3], "service_tier", `"default"`)
 	expectJSON(t, chunks[3], "choices", `[]`)
 	expectJSON(t, chunks[3], "usage", `{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{"cached_tokens":4},"completion_tokens_details":{"reasoning_tokens":2}}`)
 

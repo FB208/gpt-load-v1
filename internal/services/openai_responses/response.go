@@ -107,11 +107,13 @@ func (s *StreamConverter) Finish() [][]byte {
 }
 
 func (s *StreamConverter) convertEvent(event gjson.Result) []byte {
-	if tier := responseServiceTier(event.Get("response")); tier != "" {
-		s.serviceTier = tier
-	}
-
 	dataType := event.Get("type").String()
+	// Early events echo the requested tier (e.g. "auto"); only terminal events carry the tier actually used.
+	if dataType == "response.completed" || dataType == "response.incomplete" {
+		if tier := responseServiceTier(event.Get("response")); tier != "" {
+			s.serviceTier = tier
+		}
+	}
 	switch dataType {
 	case "response.created", "response.in_progress":
 		response := event.Get("response")
