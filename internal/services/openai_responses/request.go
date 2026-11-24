@@ -33,6 +33,9 @@ func (e *RequestError) Error() string {
 	return e.Message
 }
 
+// minMaxOutputTokens is the smallest max_output_tokens the Responses API accepts.
+const minMaxOutputTokens = 16
+
 // passthroughFields keep the same name and meaning in both APIs.
 var passthroughFields = []string{
 	"temperature",
@@ -115,10 +118,17 @@ func ConvertChatRequest(rawJSON []byte, opts Options) ([]byte, []string, error) 
 	}
 
 	// Map token limits; max_completion_tokens supersedes the deprecated max_tokens.
-	if v := root.Get("max_completion_tokens"); v.Exists() && v.Type != gjson.Null {
-		out, _ = sjson.SetRawBytes(out, "max_output_tokens", []byte(v.Raw))
-	} else if v := root.Get("max_tokens"); v.Exists() && v.Type != gjson.Null {
-		out, _ = sjson.SetRawBytes(out, "max_output_tokens", []byte(v.Raw))
+	maxTokens := root.Get("max_completion_tokens")
+	if !maxTokens.Exists() || maxTokens.Type == gjson.Null {
+		maxTokens = root.Get("max_tokens")
+	}
+	if maxTokens.Exists() && maxTokens.Type != gjson.Null {
+		// Chat clients often probe with tiny limits such as 1, which the Responses API rejects.
+		if maxTokens.Type == gjson.Number && maxTokens.Float() < minMaxOutputTokens {
+			out, _ = sjson.SetBytes(out, "max_output_tokens", minMaxOutputTokens)
+		} else {
+			out, _ = sjson.SetRawBytes(out, "max_output_tokens", []byte(maxTokens.Raw))
+		}
 	}
 
 	// Map reasoning effort only when the client asked for it, as Chat Completions does.

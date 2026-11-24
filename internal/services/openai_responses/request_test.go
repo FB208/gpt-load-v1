@@ -62,6 +62,26 @@ func TestConvertChatRequestParameters(t *testing.T) {
 	}
 }
 
+// TestConvertChatRequestMinOutputTokens verifies token limits below the Responses minimum are raised to it.
+func TestConvertChatRequestMinOutputTokens(t *testing.T) {
+	cases := []struct {
+		body string
+		want string
+	}{
+		{`"max_tokens":1`, `16`},
+		{`"max_completion_tokens":5,"max_tokens":100`, `16`},
+		{`"max_completion_tokens":null,"max_tokens":1`, `16`},
+		{`"max_tokens":16`, `16`},
+		{`"max_tokens":17`, `17`},
+	}
+	for _, tc := range cases {
+		out, _ := convertRequest(t, `{"model":"m",`+tc.body+`,"messages":[{"role":"user","content":"hi"}]}`, Options{})
+		if got := out.Get("max_output_tokens").Raw; got != tc.want {
+			t.Errorf("%s: max_output_tokens = %s, want %s", tc.body, got, tc.want)
+		}
+	}
+}
+
 // TestConvertChatRequestDefaults verifies fields the Chat API leaves unset stay unset.
 func TestConvertChatRequestDefaults(t *testing.T) {
 	out, _ := convertRequest(t, `{"model":"m","store":true,"messages":[{"role":"user","content":"hi"}]}`, Options{})
