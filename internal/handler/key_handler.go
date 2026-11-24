@@ -368,6 +368,31 @@ func (s *Server) TestMultipleKeys(c *gin.Context) {
 	})
 }
 
+// TestKeyImage tests image generation with a specific key and returns a preview.
+func (s *Server) TestKeyImage(c *gin.Context) {
+	var req struct {
+		GroupID uint   `json:"group_id" binding:"required"`
+		KeyID   uint   `json:"key_id" binding:"required"`
+		Model   string `json:"model"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, app_errors.ErrInvalidJSON)
+		return
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "image_test.model_required")
+		return
+	}
+
+	image, err := s.GroupService.TestKeyImage(c.Request.Context(), req.GroupID, req.KeyID, model)
+	if s.handleGroupError(c, err) {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, image)
+}
+
 // ValidateGroupKeys initiates a manual validation task for all keys in a group.
 func (s *Server) ValidateGroupKeys(c *gin.Context) {
 	var req ValidateGroupKeysRequest

@@ -151,6 +151,36 @@ func (s *GroupService) FetchModels(ctx context.Context, groupID uint, params Gro
 	return ids, err
 }
 
+// TestKeyImage generates a preview using the specified key without updating its state.
+func (s *GroupService) TestKeyImage(ctx context.Context, groupID, keyID uint, model string) (channel.GeneratedImage, error) {
+	var savedGroup models.Group
+	if err := s.db.WithContext(ctx).First(&savedGroup, groupID).Error; err != nil {
+		return channel.GeneratedImage{}, app_errors.ParseDBError(err)
+	}
+	group, err := s.groupManager.GetGroupByName(savedGroup.Name)
+	if err != nil {
+		return channel.GeneratedImage{}, NewI18nError(app_errors.ErrResourceNotFound, "validation.group_not_found", nil)
+	}
+	if group.GroupType == "aggregate" || group.ChannelType != "openai" {
+		return channel.GeneratedImage{}, NewI18nError(app_errors.ErrValidation, "image_test.openai_group_required", nil)
+	}
+
+	var key models.APIKey
+	if err := s.db.WithContext(ctx).Where("group_id = ? AND id = ?", groupID, keyID).First(&key).Error; err != nil {
+		return channel.GeneratedImage{}, app_errors.ParseDBError(err)
+	}
+	key.KeyValue, err = s.encryptionSvc.Decrypt(key.KeyValue)
+	if err != nil {
+		return channel.GeneratedImage{}, NewI18nError(app_errors.ErrInternalServer, "models.decrypt_failed", nil)
+	}
+
+	image, err := s.channelFactory.GenerateTestImage(ctx, group, &key, model)
+	if err != nil {
+		return channel.GeneratedImage{}, NewI18nError(app_errors.ErrBadGateway, "image_test.failed", map[string]any{"reason": err.Error()})
+	}
+	return image, nil
+}
+
 // GroupCreateParams captures all fields required to create a group.
 type GroupCreateParams struct {
 	Name                string

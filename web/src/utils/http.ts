@@ -4,7 +4,7 @@ import axios from "axios";
 import { appState } from "./app-state";
 
 // 定义不需要显示 loading 的 API 地址列表
-const noLoadingUrls = ["/tasks/status"];
+const noLoadingUrls = ["/tasks/status", "/keys/test-image"];
 
 declare module "axios" {
   interface AxiosRequestConfig {

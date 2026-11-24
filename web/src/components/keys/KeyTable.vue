@@ -93,6 +93,12 @@ const isRestoring = ref(false);
 const createDialogShow = ref(false);
 const deleteDialogShow = ref(false);
 
+const imageTestKey = ref<Pick<APIKey, "id" | "group_id"> | null>(null);
+const imageTestModel = ref("");
+const imageTestLoading = ref(false);
+const imageTestPreview = ref("");
+const imageTestPreviewFailed = ref(false);
+
 // 备注编辑相关
 const notesDialogShow = ref(false);
 const editingKey = ref<KeyRow | null>(null);
@@ -261,6 +267,35 @@ async function testKey(_key: KeyRow) {
   } finally {
     testingMsg?.destroy();
     testingMsg = null;
+  }
+}
+
+// 打开所选密钥的生图测试弹窗。
+function openImageTest(key: KeyRow) {
+  imageTestKey.value = { id: key.id, group_id: key.group_id };
+  imageTestModel.value = "";
+  imageTestPreviewFailed.value = false;
+}
+
+// 关闭弹窗并清除本次的预览。
+function closeImageTest() {
+  imageTestKey.value = null;
+  imageTestPreview.value = "";
+}
+
+// 用指定密钥生成一张图片并显示预览。
+async function generateTestImage() {
+  const { group_id, id } = imageTestKey.value!;
+  imageTestLoading.value = true;
+  imageTestPreview.value = "";
+  imageTestPreviewFailed.value = false;
+  try {
+    const image = await keysApi.testKeyImage(group_id, id, imageTestModel.value.trim());
+    imageTestPreview.value = image.b64_json ? `data:image/png;base64,${image.b64_json}` : image.url!;
+  } catch {
+    // 请求失败原因已由 HTTP 拦截器提示。
+  } finally {
+    imageTestLoading.value = false;
   }
 }
 
@@ -767,6 +802,15 @@ function resetPage() {
                   {{ t("keys.testShort") }}
                 </n-button>
                 <n-button
+                  v-if="selectedGroup?.channel_type === 'openai'"
+                  tertiary
+                  type="info"
+                  size="tiny"
+                  @click="openImageTest(key)"
+                >
+                  {{ t("keys.testImage") }}
+                </n-button>
+                <n-button
                   v-if="key.status !== 'active'"
                   tertiary
                   size="tiny"
@@ -844,6 +888,46 @@ function resetPage() {
     />
   </div>
 
+  <n-modal
+    :show="imageTestKey !== null"
+    preset="dialog"
+    :title="t('keys.testImage')"
+    :closable="!imageTestLoading"
+    :close-on-esc="!imageTestLoading"
+    :mask-closable="false"
+    @update:show="show => !show && closeImageTest()"
+  >
+    <n-input
+      v-model:value="imageTestModel"
+      :placeholder="t('keys.imageTestModel')"
+      :input-props="{ 'aria-label': t('keys.imageTestModel') }"
+      :disabled="imageTestLoading"
+    />
+    <p>{{ t("keys.imageTestMayCharge") }}</p>
+    <p v-if="imageTestPreviewFailed" role="alert">{{ t("keys.imageTestPreviewFailed") }}</p>
+    <img
+      v-else-if="imageTestPreview"
+      class="image-test-preview"
+      :src="imageTestPreview"
+      :alt="t('keys.imageTestPreview')"
+      referrerpolicy="no-referrer"
+      @error="imageTestPreviewFailed = true"
+    />
+    <template #action>
+      <n-button :disabled="imageTestLoading" @click="closeImageTest">
+        {{ t("common.close") }}
+      </n-button>
+      <n-button
+        type="primary"
+        :disabled="imageTestLoading || !imageTestModel.trim()"
+        :loading="imageTestLoading"
+        @click="generateTestImage"
+      >
+        {{ t("keys.imageTestGenerate") }}
+      </n-button>
+    </template>
+  </n-modal>
+
   <!-- 备注编辑对话框 -->
   <n-modal v-model:show="notesDialogShow" preset="dialog" :title="t('keys.editKeyNotes')">
     <n-input
@@ -862,6 +946,13 @@ function resetPage() {
 </template>
 
 <style scoped>
+.image-test-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 55vh;
+  margin: 12px auto 0;
+}
+
 .key-table-container {
   background: var(--card-bg-solid);
   border-radius: 8px;

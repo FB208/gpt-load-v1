@@ -176,6 +176,20 @@ export const keysApi = {
     return res.data;
   },
 
+  // 使用指定密钥生成一张测试图片
+  async testKeyImage(
+    group_id: number,
+    key_id: number,
+    model: string
+  ): Promise<{ b64_json?: string; url?: string }> {
+    const res = await http.post(
+      "/keys/test-image",
+      { group_id, key_id, model },
+      { hideMessage: true, timeout: 190000 }
+    );
+    return res.data;
+  },
+
   // 删除密钥
   async deleteKeys(
     group_id: number,
